@@ -46,6 +46,11 @@ To start the client:
 ```bash
 $ cd apps/jarvis-webapp && yarn dev
 ```
+
+To start the temporal worker:
+```bash
+$ export $(cat .env); go run ./cmd/worker/main.go
+```
 Then open your browser to the React webapp at `http://localhost:5173` (see `apps/jarvis-webapp/` for details).
 
 The web server runs on port 7070 and provides:

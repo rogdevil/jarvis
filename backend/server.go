@@ -1,12 +1,14 @@
 package jarvis
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"sync"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"go.temporal.io/sdk/client"
 )
 
 // ChatRequest represents the incoming chat request
@@ -61,6 +63,18 @@ func (s *Server) StartServer(port string) error {
 
 // handleChat processes chat requests
 func (s *Server) handleChat(c *gin.Context) {
+	// initialize the temporal client
+	temporalClient, err := client.Dial(client.Options{})
+	if err != nil {
+		log.Fatalln("Unable to create client", err)
+	}
+	defer temporalClient.Close()
+
+	options := client.StartWorkflowOptions{
+		ID:        "jarvis-chat-workflow",
+		TaskQueue: "jarvis-message-queue",
+	}
+
 	var req ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ChatResponse{
@@ -73,7 +87,17 @@ func (s *Server) handleChat(c *gin.Context) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	response, err := s.jarvis.Chat(req.Message)
+	workflowExecution, err := temporalClient.ExecuteWorkflow(context.Background(), options, JarvisWorkflow, req.Message)
+	if err != nil {
+		log.Fatalln("Unable to execute workflow", err)
+		c.JSON(http.StatusInternalServerError, ChatResponse{
+			Error: "Failed to process chat: " + err.Error(),
+		})
+		return
+	}
+
+	var result string
+	err = workflowExecution.Get(context.Background(), &result)
 	if err != nil {
 		log.Printf("Chat error: %v", err)
 		c.JSON(http.StatusInternalServerError, ChatResponse{
@@ -83,6 +107,6 @@ func (s *Server) handleChat(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, ChatResponse{
-		Response: response,
+		Response: result,
 	})
 }
