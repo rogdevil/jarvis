@@ -24,14 +24,27 @@ type ChatResponse struct {
 
 // Server holds the Jarvis instance and handles HTTP requests
 type Server struct {
-	jarvis *Jarvis
-	mutex  sync.Mutex
+	jarvis         *Jarvis
+	temporalClient client.Client
+	mutex          sync.Mutex
+}
+
+func NewTemporalClient() client.Client {
+	temporalClient, err := client.Dial(client.Options{
+		HostPort: "localhost:6233",
+	})
+	if err != nil {
+		log.Fatalln("Unable to create client", err)
+	}
+
+	return temporalClient
 }
 
 // NewServer creates a new server instance
 func NewServer() *Server {
 	return &Server{
-		jarvis: Start(),
+		jarvis:         Start(),
+		temporalClient: NewTemporalClient(),
 	}
 }
 
@@ -63,18 +76,6 @@ func (s *Server) StartServer(port string) error {
 
 // handleChat processes chat requests
 func (s *Server) handleChat(c *gin.Context) {
-	// initialize the temporal client
-	temporalClient, err := client.Dial(client.Options{})
-	if err != nil {
-		log.Fatalln("Unable to create client", err)
-	}
-	defer temporalClient.Close()
-
-	options := client.StartWorkflowOptions{
-		ID:        "jarvis-chat-workflow",
-		TaskQueue: "jarvis-message-queue",
-	}
-
 	var req ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ChatResponse{
@@ -87,7 +88,12 @@ func (s *Server) handleChat(c *gin.Context) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	workflowExecution, err := temporalClient.ExecuteWorkflow(context.Background(), options, JarvisWorkflow, req.Message)
+	options := client.StartWorkflowOptions{
+		ID:        "jarvis-chat-workflow",
+		TaskQueue: "jarvis-message-queue",
+	}
+
+	workflowExecution, err := s.temporalClient.ExecuteWorkflow(context.Background(), options, JarvisWorkflow, req.Message)
 	if err != nil {
 		log.Fatalln("Unable to execute workflow", err)
 		c.JSON(http.StatusInternalServerError, ChatResponse{
