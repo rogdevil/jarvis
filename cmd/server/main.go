@@ -21,7 +21,9 @@ func initTemporalWorker() {
 	w := worker.New(c, "jarvis-message-queue", worker.Options{})
 
 	w.RegisterWorkflow(jarvis.JarvisWorkflow)
+	w.RegisterWorkflow(jarvis.ProcessChatMessageWorkflow)
 	w.RegisterActivity(jarvisClient.Chat)
+	w.RegisterActivity(jarvisClient.GetChatLengthActivity)
 
 	err = w.Run(worker.InterruptCh())
 	if err != nil {

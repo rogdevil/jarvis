@@ -1,5 +1,10 @@
 package jarvis
 
+import (
+	"fmt"
+	"time"
+)
+
 // Jarvis is the main struct that keeps track of chat history with Gemini.
 type Jarvis struct {
 	gemini  *Gemini
@@ -22,4 +27,11 @@ func (j *Jarvis) Chat(message string) (string, error) {
 	}
 	j.history = append(j.history, message, response)
 	return response, nil
+}
+
+func (j *Jarvis) GetChatLengthActivity(message string) (int64, error) {
+	time.Sleep(10 * time.Second)
+	fmt.Println("the message was :", len(message), " long")
+	length := len(message)
+	return int64(length), nil
 }
