@@ -4,32 +4,55 @@ import (
 	"log"
 
 	jarvis "github.com/symbolichealth/jarvis/backend"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 )
 
 func initTemporalWorker() {
 	c, err := client.Dial(client.Options{
 		HostPort: "localhost:6233",
 	})
-	jarvisClient := jarvis.Start()
 	if err != nil {
 		log.Fatalln("Unable to create client", err)
 	}
 	defer c.Close()
 
+	jarvisClient := jarvis.Start()
+
+	// First worker for jarvis workflow
 	w := worker.New(c, "jarvis-message-queue", worker.Options{})
-
 	w.RegisterWorkflow(jarvis.JarvisWorkflow)
-	w.RegisterWorkflow(jarvis.ProcessChatMessageWorkflow)
 	w.RegisterActivity(jarvisClient.Chat)
-	w.RegisterActivity(jarvisClient.GetChatLengthActivity)
 
-	err = w.Run(worker.InterruptCh())
-	if err != nil {
-		log.Fatalln("Unable to start worker", err)
+	// Second worker for process workflow
+	processWorker := worker.New(c, "process-message-queue", worker.Options{})
+	registerProcessWorkflowOption := workflow.RegisterOptions{
+		Name: "ProcessChatMessageWorkflow",
 	}
+	processWorker.RegisterWorkflowWithOptions(jarvis.ProcessChatMessageWorkflow, registerProcessWorkflowOption)
+	processWorker.RegisterActivityWithOptions(jarvisClient.GetChatLengthActivity, activity.RegisterOptions{
+		Name: "GetChatLengthActivity",
+	})
 
+	// Start both workers concurrently
+	go func() {
+		err := w.Run(worker.InterruptCh())
+		if err != nil {
+			log.Fatalln("Unable to start jarvis worker", err)
+		}
+	}()
+
+	go func() {
+		err := processWorker.Run(worker.InterruptCh())
+		if err != nil {
+			log.Fatalln("Unable to start process worker", err)
+		}
+	}()
+
+	// Keep the function running
+	select {}
 }
 
 func main() {

@@ -11,6 +11,11 @@ import (
 	"go.temporal.io/sdk/client"
 )
 
+// signal for process message workflow
+const (
+	ProcessMessageSignal = "process-message"
+)
+
 // ChatRequest represents the incoming chat request
 type ChatRequest struct {
 	Message string `json:"message" binding:"required"`
@@ -48,6 +53,19 @@ func NewServer() *Server {
 	}
 }
 
+func (s *Server) InitProcessMessageWorkflow() {
+	metricWorkflowOption := client.StartWorkflowOptions{
+		ID:        "process-message-workflow",
+		TaskQueue: "process-message-queue",
+	}
+
+	_, err := s.temporalClient.ExecuteWorkflow(context.Background(), metricWorkflowOption, ProcessChatMessageWorkflow)
+
+	if err != nil {
+		log.Fatalln("unable to start the workflow")
+	}
+}
+
 // StartServer starts the HTTP server on the specified port
 func (s *Server) StartServer(port string) error {
 	// Set Gin to release mode for production
@@ -66,6 +84,8 @@ func (s *Server) StartServer(port string) error {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+
+	s.InitProcessMessageWorkflow()
 
 	// Chat endpoint
 	r.POST("/chat", s.handleChat)
@@ -87,6 +107,19 @@ func (s *Server) handleChat(c *gin.Context) {
 	// Use mutex to ensure thread safety for chat history
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+
+	// Send signal to workflow
+	err := s.temporalClient.SignalWorkflow(
+		context.Background(),
+		"process-message-workflow",
+		"",
+		ProcessMessageSignal,
+		req.Message,
+	)
+
+	if err != nil {
+		log.Fatalln("Unable to process message", err)
+	}
 
 	options := client.StartWorkflowOptions{
 		ID:        "jarvis-chat-workflow",
